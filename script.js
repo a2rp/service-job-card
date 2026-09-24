@@ -1,5 +1,5 @@
 /* =========================================================
-   Service Job Card — Vanilla JS + LocalStorage
+   Service Job Card - Vanilla JS + LocalStorage
    Repo/Folder: service-job-card
 ========================================================= */
 const LS_KEYS = {
@@ -38,6 +38,8 @@ const importFile = document.getElementById("importFile");
 const btnReset = document.getElementById("btnReset");
 const shopTitle = document.getElementById("shopTitle");
 const shopSub = document.getElementById("shopSub");
+const copyrightYear = document.getElementById("copyrightYear");
+if (copyrightYear) copyrightYear.textContent = new Date().getFullYear();
 
 // Columns
 const colNew = document.getElementById("col-new");
@@ -337,14 +339,14 @@ function makeCard(job) {
         : "No promise";
     $(".promised", node).textContent = promised;
 
-    $(".name", node).textContent = `${job.customer.name || "—"} (${
-        job.customer.phone || "—"
+    $(".name", node).textContent = `${job.customer.name || "-"} (${
+        job.customer.phone || "-"
     })`;
     $(".item", node).textContent =
         [job.item.type, job.item.brand, job.item.model]
             .filter(Boolean)
-            .join(" · ") || "—";
-    $(".issue", node).textContent = job.issue || "—";
+            .join(" · ") || "-";
+    $(".issue", node).textContent = job.issue || "-";
 
     $(".view", node).addEventListener("click", () => openJob(job.id));
     $(".print", node).addEventListener("click", () => printTicket(job));
@@ -535,22 +537,22 @@ function printTicket(job) {
         <div class="print-meta">
           <div><b>Job ID:</b> ${job.id}</div>
           <div><b>Date:</b> ${fmtDateTime(job.createdAt)}</div>
-          <div><b>Customer:</b> ${escapeHtml(job.customer.name || "—")}</div>
-          <div><b>Phone:</b> ${escapeHtml(job.customer.phone || "—")}</div>
+          <div><b>Customer:</b> ${escapeHtml(job.customer.name || "-")}</div>
+          <div><b>Phone:</b> ${escapeHtml(job.customer.phone || "-")}</div>
         </div>
 
         <table class="print-table">
           <tr><td><b>Item</b></td><td>${escapeHtml(
               [job.item.type, job.item.brand, job.item.model, job.item.serial]
                   .filter(Boolean)
-                  .join(" · ") || "—"
+                  .join(" · ") || "-"
           )}</td></tr>
-          <tr><td><b>Issue</b></td><td>${escapeHtml(job.issue || "—")}</td></tr>
+          <tr><td><b>Issue</b></td><td>${escapeHtml(job.issue || "-")}</td></tr>
           <tr><td><b>Accessories</b></td><td>${escapeHtml(
-              job.accessories || "—"
+              job.accessories || "-"
           )}</td></tr>
           <tr><td><b>Promised</b></td><td>${
-              job.promisedAt ? fmtDateTime(job.promisedAt) : "—"
+              job.promisedAt ? fmtDateTime(job.promisedAt) : "-"
           }</td></tr>
         </table>
 
