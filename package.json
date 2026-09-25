@@ -1,1 +1,1 @@
-{"name":"service-job-card-pages","private":true,"scripts":{"deploy":"gh-pages -d . -b gh-pages"},"devDependencies":{"gh-pages":"^6.3.0"}}
+{"name":"service-job-card-pages","private":true}
