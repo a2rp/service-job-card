@@ -8,7 +8,7 @@ A lightweight offline service desk for creating and tracking repair jobs in a Ka
 - Move jobs through New, In-Progress, Ready, and Picked-Up stages
 - LocalStorage persistence with JSON import and export
 - Billing totals, balance calculation, shop settings, and printable tickets
-- Responsive fixed header and icon-only footer links
+- Responsive fixed header, icon-only footer links, and floating scroll-to-top control
 
 ## Tech stack
 

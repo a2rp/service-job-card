@@ -39,7 +39,14 @@ const btnReset = document.getElementById("btnReset");
 const shopTitle = document.getElementById("shopTitle");
 const shopSub = document.getElementById("shopSub");
 const copyrightYear = document.getElementById("copyrightYear");
+const btnTop = document.getElementById("btnTop");
 if (copyrightYear) copyrightYear.textContent = new Date().getFullYear();
+if (btnTop) {
+    const updateTopButton = () => btnTop.classList.toggle("visible", window.scrollY > 420);
+    window.addEventListener("scroll", updateTopButton, { passive: true });
+    btnTop.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+    updateTopButton();
+}
 
 // Columns
 const colNew = document.getElementById("col-new");
@@ -95,7 +102,7 @@ const nextId = () => {
     const countToday = jobs.filter((j) => j.id.startsWith(key)).length + 1;
     return `${key}-${String(countToday).padStart(3, "0")}`;
 };
-const currency = (n) => (isFinite(n) ? `₹${Number(n).toFixed(2)}` : "₹0.00");
+const currency = (n) => (isFinite(n) ? String.fromCharCode(0x20b9) + Number(n).toFixed(2) : String.fromCharCode(0x20b9) + "0.00");
 
 // ---- Calculations ----
 const calcTotal = (estimate, taxPercent) => {
@@ -576,7 +583,7 @@ function printTicket(job) {
 
         <div class="print-foot">
           * Items left beyond 30 days may incur storage charges. Physical damage/liquid damage at owner's risk.
-          <br />* This is a computer-generated receipt.
+          <br />* This receipt was prepared automatically.
         </div>
       </div>
       <script>window.print();<\/script>
