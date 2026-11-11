@@ -1,6 +1,6 @@
 # Service Job Card
 
-A lightweight offline service desk for creating and tracking repair jobs in a Kanban workflow.
+A lightweight, local-first service desk for creating and tracking repair jobs in a Kanban workflow.
 
 ## Features
 
@@ -22,7 +22,11 @@ Open `index.html` with a local server such as VS Code Live Server. To compile Sa
 sass --watch style.scss style.css
 ```
 
-## Live
+## Data and backups
+
+Jobs, drafts, and shop settings are stored in this browser's LocalStorage. They do not sync to another browser or device. Use **Export** to download a JSON backup before clearing browser data.
+
+## Demo
 
 [Open Service Job Card](https://a2rp.github.io/service-job-card/)
 

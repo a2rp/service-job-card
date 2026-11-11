@@ -18,14 +18,66 @@ const readStore = (k, fallback) => {
 };
 const writeStore = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 
+const isRecord = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+const hasStringFields = (value, fields) =>
+    isRecord(value) && fields.every((field) => typeof value[field] === "string");
+const hasNonNegativeNumberFields = (value, fields) =>
+    isRecord(value) &&
+    fields.every(
+        (field) => Number.isFinite(value[field]) && value[field] >= 0
+    );
+const validStatuses = new Set(["new", "in_progress", "ready", "picked_up"]);
+
+const isValidJob = (job) =>
+    isRecord(job) &&
+    hasStringFields(job, [
+        "id",
+        "createdAt",
+        "updatedAt",
+        "issue",
+        "accessories",
+        "status",
+        "promisedAt",
+        "readyAt",
+        "pickedAt",
+        "notes",
+    ]) &&
+    validStatuses.has(job.status) &&
+    hasStringFields(job.customer, ["name", "phone"]) &&
+    hasStringFields(job.item, ["type", "brand", "model", "serial"]) &&
+    hasStringFields(job.estimate, ["notes"]) &&
+    hasNonNegativeNumberFields(job.estimate, [
+        "amount",
+        "advance",
+        "taxPercent",
+    ]) &&
+    hasStringFields(job.billing, ["paymentMode"]) &&
+    hasNonNegativeNumberFields(job.billing, ["finalAmount", "balance"]);
+
+const isValidSettings = (value) =>
+    hasStringFields(value, ["name", "address", "phone"]);
+
+const isValidBackup = (value) =>
+    isRecord(value) &&
+    Array.isArray(value.jobs) &&
+    value.jobs.every(isValidJob) &&
+    (value.settings === undefined || isValidSettings(value.settings));
+
 // ---------- State ----------
-let jobs = readStore(LS_KEYS.JOBS, []);
-let settings = readStore(LS_KEYS.SETTINGS, {
+const storedJobs = readStore(LS_KEYS.JOBS, []);
+let jobs = Array.isArray(storedJobs) ? storedJobs.filter(isValidJob) : [];
+const defaultSettings = {
     name: "Service Job Card",
     address: "",
     phone: "",
-});
-const draft = readStore(LS_KEYS.DRAFT, {});
+};
+const storedSettings = readStore(LS_KEYS.SETTINGS, defaultSettings);
+let settings = isValidSettings(storedSettings)
+    ? storedSettings
+    : defaultSettings;
+const storedDraft = readStore(LS_KEYS.DRAFT, {});
+let draft = isRecord(storedDraft) ? storedDraft : {};
 
 // ---------- Elements ----------
 const drawer = document.getElementById("drawer");
@@ -155,7 +207,7 @@ function boot() {
     shopTitle.textContent = settings.name || "Service Job Card";
     shopSub.textContent = settings.address
         ? settings.address.split("\n")[0]
-        : "Offline • LocalStorage";
+        : "Local-first • LocalStorage";
 
     // Restore draft in form
     Object.entries(draft).forEach(([k, v]) => {
@@ -215,7 +267,8 @@ jobForm.addEventListener("submit", (e) => {
 
     jobs.unshift(job);
     writeStore(LS_KEYS.JOBS, jobs);
-    writeStore(LS_KEYS.DRAFT, {}); // clear draft
+    draft = {};
+    writeStore(LS_KEYS.DRAFT, draft);
     jobForm.reset();
     drawer.classList.remove("open");
     alert(`Job ${job.id} created.`);
@@ -235,30 +288,50 @@ btnExport.addEventListener("click", () => {
     a.href = url;
     a.download = `service-job-card-${todayKey()}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
 importFile.addEventListener("change", (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    importFile.value = "";
+    if (file.size > 5 * 1024 * 1024) {
+        alert("Backup files must not exceed 5 MB.");
+        return;
+    }
     if (!confirm("Importing will REPLACE current jobs & settings. Continue?"))
         return;
     const reader = new FileReader();
     reader.onload = () => {
+        let data;
         try {
-            const data = JSON.parse(reader.result);
-            jobs = data.jobs ?? [];
-            settings = data.settings ?? settings;
-            writeStore(LS_KEYS.JOBS, jobs);
-            writeStore(LS_KEYS.SETTINGS, settings);
-            boot();
-            alert("Import successful.");
-        } catch (err) {
-            alert("Invalid JSON.");
+            data = JSON.parse(reader.result);
+        } catch {
+            alert("The selected file is not valid JSON.");
+            return;
         }
+        if (!isValidBackup(data)) {
+            alert("Invalid backup. Choose a Service Job Card JSON export.");
+            return;
+        }
+
+        const importedSettings = data.settings ?? settings;
+        try {
+            writeStore(LS_KEYS.JOBS, data.jobs);
+            writeStore(LS_KEYS.SETTINGS, importedSettings);
+            writeStore(LS_KEYS.DRAFT, {});
+        } catch {
+            alert("Could not save this backup in browser storage.");
+            return;
+        }
+        jobs = data.jobs;
+        settings = importedSettings;
+        draft = {};
+        boot();
+        alert("Import successful.");
     };
+    reader.onerror = () => alert("Could not read the selected backup file.");
     reader.readAsText(file);
-    importFile.value = "";
 });
 
 btnReset.addEventListener("click", () => {
@@ -272,7 +345,8 @@ btnReset.addEventListener("click", () => {
     localStorage.removeItem(LS_KEYS.SETTINGS);
     localStorage.removeItem(LS_KEYS.DRAFT);
     jobs = [];
-    settings = { name: "Service Job Card", address: "", phone: "" };
+    settings = defaultSettings;
+    draft = {};
     boot();
     alert("All data cleared.");
 });
@@ -484,20 +558,38 @@ function doPickup(id) {
         job.estimate.amount.toFixed(2)
     );
     if (finalStr === null) return; // cancel
-    const finalAmount = Number(finalStr || 0);
-    const balance = Math.max(
-        0,
-        finalAmount - Number(job.estimate.advance || 0)
+    const finalAmount = Number(finalStr);
+    if (!finalStr.trim() || !Number.isFinite(finalAmount) || finalAmount < 0) {
+        alert("Enter a valid non-negative final amount.");
+        return;
+    }
+    const taxPercent = Number(job.estimate.taxPercent || 0);
+    const tax = (finalAmount * taxPercent) / 100;
+    const balance = calcBalance(
+        finalAmount,
+        taxPercent,
+        job.estimate.advance
     );
-    const pm = prompt(`Payment mode? (UPI/Card/Cash)`, "UPI") || "";
+    const paymentInput = prompt("Payment mode? (UPI/Card/Cash)", "UPI");
+    if (paymentInput === null) return;
+    const paymentModes = new Map([
+        ["upi", "UPI"],
+        ["card", "Card"],
+        ["cash", "Cash"],
+    ]);
+    const pm = paymentModes.get(paymentInput.trim().toLowerCase());
+    if (!pm) {
+        alert("Choose UPI, Card, or Cash as the payment mode.");
+        return;
+    }
 
     if (
         !confirm(
-            `Confirm pickup?\nFinal: ${currency(
+            `Confirm pickup?\nFinal subtotal: ${currency(
                 finalAmount
-            )}\nAdvance: ${currency(job.estimate.advance)}\nBalance: ${currency(
-                balance
-            )}\nPayment: ${pm}`
+            )}\nTax: ${currency(tax)}\nAdvance: ${currency(
+                job.estimate.advance
+            )}\nBalance: ${currency(balance)}\nPayment: ${pm}`
         )
     )
         return;
@@ -519,9 +611,12 @@ function doPickup(id) {
 function printTicket(job) {
     const win = window.open("", "_blank");
     if (!win) return alert("Popup blocked. Allow popups to print.");
-    const est = job.estimate.amount || 0;
-    const tax = (est * (Number(job.estimate.taxPercent) || 0)) / 100;
-    const sub = est;
+    const isFinalized = job.status === "picked_up";
+    const sub = isFinalized
+        ? Number(job.billing.finalAmount)
+        : Number(job.estimate.amount || 0);
+    const taxPercent = Number(job.estimate.taxPercent) || 0;
+    const tax = (sub * taxPercent) / 100;
     const grand = sub + tax;
     const advance = Number(job.estimate.advance || 0);
     const balance = Math.max(0, grand - advance);
@@ -530,7 +625,7 @@ function printTicket(job) {
   <html>
     <head>
       <meta charset="utf-8" />
-      <title>Ticket ${job.id}</title>
+      <title>Ticket ${escapeHtml(job.id)}</title>
       <style>${PRINT_CSS}</style>
     </head>
     <body>
@@ -542,8 +637,8 @@ function printTicket(job) {
         </div>
 
         <div class="print-meta">
-          <div><b>Job ID:</b> ${job.id}</div>
-          <div><b>Date:</b> ${fmtDateTime(job.createdAt)}</div>
+          <div><b>Job ID:</b> ${escapeHtml(job.id)}</div>
+          <div><b>Date:</b> ${escapeHtml(fmtDateTime(job.createdAt))}</div>
           <div><b>Customer:</b> ${escapeHtml(job.customer.name || "-")}</div>
           <div><b>Phone:</b> ${escapeHtml(job.customer.phone || "-")}</div>
         </div>
@@ -558,19 +653,23 @@ function printTicket(job) {
           <tr><td><b>Accessories</b></td><td>${escapeHtml(
               job.accessories || "-"
           )}</td></tr>
-          <tr><td><b>Promised</b></td><td>${
+          <tr><td><b>Promised</b></td><td>${escapeHtml(
               job.promisedAt ? fmtDateTime(job.promisedAt) : "-"
-          }</td></tr>
+          )}</td></tr>
         </table>
 
         <table class="print-table">
-          <tr><td>Subtotal</td><td style="text-align:right">${currency(
+          <tr><td>${
+              isFinalized ? "Final subtotal" : "Estimated subtotal"
+          }</td><td style="text-align:right">${currency(
               sub
           )}</td></tr>
-          <tr><td>Tax (${Number(
-              job.estimate.taxPercent || 0
-          )}%)</td><td style="text-align:right">${currency(tax)}</td></tr>
-          <tr><td><b>Grand Total</b></td><td style="text-align:right"><b>${currency(
+          <tr><td>Tax (${taxPercent}%)</td><td style="text-align:right">${currency(
+              tax
+          )}</td></tr>
+          <tr><td><b>${
+              isFinalized ? "Final total" : "Estimated total"
+          }</b></td><td style="text-align:right"><b>${currency(
               grand
           )}</b></td></tr>
           <tr><td>Advance</td><td style="text-align:right">${currency(
@@ -579,11 +678,18 @@ function printTicket(job) {
           <tr><td><b>Balance</b></td><td style="text-align:right"><b>${currency(
               balance
           )}</b></td></tr>
+          ${
+              isFinalized
+                  ? `<tr><td>Payment mode</td><td>${escapeHtml(
+                        job.billing.paymentMode || "-"
+                    )}</td></tr>`
+                  : ""
+          }
         </table>
 
         <div class="print-foot">
-          * Items left beyond 30 days may incur storage charges. Physical damage/liquid damage at owner's risk.
-          <br />* This receipt was prepared automatically.
+          Confirm your shop's warranty, storage, and service terms with the customer before issuing this ticket.
+          <br />* This ticket was generated from data stored in this browser.
         </div>
       </div>
       <script>window.print();<\/script>
